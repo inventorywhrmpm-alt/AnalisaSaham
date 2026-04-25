@@ -4,37 +4,45 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, r2_score
 
-st.set_page_config(page_title="Stock Predictor Pro", layout="wide")
-st.title("📈 AI Stock Dashboard")
+# Judul
+st.set_page_config(page_title="AI Saham", layout="wide")
+st.title("📈 AI Stock Predictor")
 
-ticker_input = st.sidebar.text_input("Ticker (Tanpa .JK)", value="SCMA").upper()
-ticker = f"{ticker_input}.JK"
+# Input
+ticker_in = st.sidebar.text_input("Kode Saham (Contoh: SCMA, BBCA)", value="SCMA").upper()
+ticker = f"{ticker_in}.JK"
 
+# Fungsi Load Data
 @st.cache_data
 def load_data(symbol):
-    return yf.download(symbol, start="2020-01-01")
+    data = yf.download(symbol, start="2022-01-01")
+    return data
 
-if ticker_input:
-    df = load_data(ticker)
-    
-    if not df.empty:
-        # Preprocessing Sederhana
-        df['S_5'] = df['Close'].rolling(window=5).mean()
-        df['V_5'] = df['Volume'].rolling(window=5).mean()
-        df = df.dropna()
+if ticker_in:
+    try:
+        df = load_data(ticker)
+        
+        if df.empty:
+            st.warning("Data tidak ditemukan. Pastikan kode saham benar.")
+        else:
+            # Feature Engineering kilat
+            df['S_5'] = df['Close'].rolling(window=5).mean()
+            df['V_5'] = df['Volume'].rolling(window=5).mean()
+            df = df.dropna()
 
-        # Model
-        X = df[['S_5', 'V_5']]
-        y = df['Close']
-        split = int(len(df) * 0.8)
-        model = RandomForestRegressor(n_estimators=50).fit(X[:split], y[:split].values.ravel())
-        y_pred = model.predict(X[split:])
+            # Machine Learning Sederhana
+            X = df[['S_5', 'V_5']]
+            y = df['Close']
+            model = RandomForestRegressor(n_estimators=50, random_state=42)
+            model.fit(X, y.values.ravel())
 
-        # --- BAGIAN GRAFIK ---
-        try:
-            st.subheader("Interactive Candlestick Chart")
+            # Metrics
+            next_price = model.predict(X.tail(1))[0]
+            st.metric(f"Prediksi Harga Besok ({ticker_in})", f"Rp{next_price:.2f}")
+
+            # GRAFIK CANDLESTICK
+            st.subheader("Interactive Chart")
             fig = go.Figure(data=[go.Candlestick(
                 x=df.index,
                 open=df['Open'], high=df['High'],
@@ -42,16 +50,8 @@ if ticker_input:
                 name='Market'
             )])
             
-            # Tambahkan Prediksi
-            fig.add_trace(go.Scatter(x=df.index[split:], y=y_pred, name='AI Prediction', line=dict(color='orange')))
-            
-            fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
-            
-            # Perintah Utama
+            fig.update_layout(template="plotly_dark", height=500, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
-            
-        except Exception as e:
-            st.error("Gagal menampilkan grafik Plotly.")
-            st.exception(e) # Ini akan menampilkan detail error jika ada
-            
-        st.metric("Estimasi Harga Besok", f"Rp{model.predict(X.tail(1))[0]:.2f}")
+
+    except Exception as e:
+        st.error(f"Terjadi kesalahan: {e}")
