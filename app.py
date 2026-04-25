@@ -6,96 +6,104 @@ import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score, mean_absolute_error
 
-st.set_page_config(page_title="AI Saham Kita v1", layout="wide")
+st.set_page_config(page_title="AI Saham Kita Pro", layout="wide")
 st.title("📈 AI Stock Predictor & Dashboard")
 
-# --- SIDEBAR ---
-ticker_in = st.sidebar.text_input("Kode Saham (Tanpa .JK)", value="SCMA").upper()
-ticker = f"{ticker_in}.JK"
+# --- SIDEBAR (Start & End Date Ditambahkan) ---
+st.sidebar.header("Konfigurasi Data")
+ticker_input = st.sidebar.text_input("Kode Saham (Contoh: SCMA, BBCA)", value="SCMA").upper()
+ticker = f"{ticker_input}.JK"
+
+# Input Tanggal
+start_date = st.sidebar.date_input("Tanggal Mulai", value=pd.to_datetime("2021-01-01"))
+end_date = st.sidebar.date_input("Tanggal Akhir", value=pd.to_datetime("today"))
 
 @st.cache_data
-def load_data(symbol):
-    # Menggunakan auto_adjust=True untuk memastikan kolom konsisten
-    data = yf.download(symbol, start="2022-01-01", auto_adjust=True)
+def load_data(symbol, start, end):
+    data = yf.download(symbol, start=start, end=end, auto_adjust=True)
     return data
 
-if ticker_in:
+if ticker_input:
     try:
-        df = load_data(ticker)
+        df = load_data(ticker, start_date, end_date)
         
-        if df.empty or len(df) < 20:
-            st.warning(f"Data untuk {ticker_in} tidak cukup atau tidak ditemukan.")
+        if df.empty or len(df) < 30:
+            st.warning("Data tidak cukup atau tidak ditemukan. Coba rentang tanggal yang lebih lama.")
         else:
-            # --- PREPROCESSING ---
-            # Menghitung Fitur
+            # --- FEATURE ENGINEERING ---
+            # Menghindari error kolom, kita pastikan ambil kolom Close & Volume yang benar
             df['S_5'] = df['Close'].rolling(window=5).mean()
+            df['S_20'] = df['Close'].rolling(window=20).mean() # Fitur tambahan untuk akurasi
             df['V_5'] = df['Volume'].rolling(window=5).mean()
             
-            # Tambahkan RSI Sederhana untuk akurasi lebih baik
+            # RSI Sederhana
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             df['RSI'] = 100 - (100 / (1 + (gain / loss)))
             
-            # Dataset untuk ML
-            df_ml = df.dropna()
-            
+            # Bersihkan NaN
+            df_ml = df.dropna().copy()
+
             # --- MACHINE LEARNING ---
-            X = df_ml[['S_5', 'V_5', 'RSI']]
+            X = df_ml[['S_5', 'S_20', 'V_5', 'RSI']]
             y = df_ml['Close']
             
-            # Split data (80% train, 20% test)
+            # Split data secara kronologis (Time Series)
             split = int(len(df_ml) * 0.8)
             X_train, X_test = X[:split], X[split:]
             y_train, y_test = y[:split], y[split:]
             
+            # Training Model
             model = RandomForestRegressor(n_estimators=100, random_state=42)
             model.fit(X_train, y_train)
             
-            # Prediksi untuk Akurasi & Besok
+            # Prediksi
             y_pred = model.predict(X_test)
             next_price = model.predict(X.tail(1))[0]
-            
-            # --- TAMPILAN METRIK ---
-            st.subheader(f"Statistik Prediksi: {ticker_in}")
+
+            # --- METRICS ---
+            st.subheader(f"Statistik Prediksi: {ticker_input}")
             m1, m2, m3 = st.columns(3)
             
-            # Hitung Akurasi (R2 Score)
             r2 = r2_score(y_test, y_pred)
             mae = mean_absolute_error(y_test, y_pred)
             
-            m1.metric("Akurasi Model (R2)", f"{r2:.2%}")
+            # Jika R2 minus, kita beri peringatan warna merah
+            m1.metric("Akurasi Model (R2)", f"{r2:.2%}", delta="Rendah" if r2 < 0 else None, delta_color="inverse")
             m2.metric("Rata-rata Error (MAE)", f"Rp{mae:.2f}")
             m3.metric("Estimasi Harga Besok", f"Rp{next_price:.2f}")
 
             # --- GRAFIK CANDLESTICK ---
             st.subheader("Grafik Candlestick & Prediksi AI")
+            
             fig = go.Figure()
 
-            # Candlestick
+            # Plot Candlestick
             fig.add_trace(go.Candlestick(
                 x=df.index,
                 open=df['Open'], high=df['High'],
                 low=df['Low'], close=df['Close'],
-                name='Harga Pasar'
+                name='Market'
             ))
 
-            # Garis Prediksi pada data Test
+            # Plot Garis Prediksi pada Data Uji
             fig.add_trace(go.Scatter(
                 x=y_test.index, y=y_pred, 
-                line=dict(color='orange', width=2), 
-                name='AI Prediction (Test Area)'
+                line=dict(color='#FFA500', width=2), 
+                name='AI Prediction'
             ))
 
             fig.update_layout(
                 template="plotly_dark", 
                 height=600, 
                 xaxis_rangeslider_visible=False,
-                yaxis_title="Harga (IDR)"
+                yaxis_title="Harga (IDR)",
+                margin=dict(l=10, r=10, t=10, b=10)
             )
-            st.plotly_chart(fig, use_container_width=True)
             
-            st.info("💡 Garis **Oren** menunjukkan kemampuan AI dalam menebak data histori terbaru.")
+            # Paksa tampilkan grafik dengan use_container_width
+            st.plotly_chart(fig, use_container_width=True)
 
     except Exception as e:
         st.error(f"Terjadi error: {e}")
