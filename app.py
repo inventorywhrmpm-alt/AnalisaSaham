@@ -33,15 +33,14 @@ components.html(tradingview_script, height=620)
 
 # --- 2. ENGINE ANALISA & AI ---
 try:
-    # 1. Ambil Data
-    df = yf.download(ticker_yf, start="2023-01-01", auto_adjust=True)
+    # Ambil data lebih panjang agar model AI lebih pintar
+    df = yf.download(ticker_yf, start="2022-01-01", auto_adjust=True)
     
-    # FIX MULTI-INDEX: Jika kolom berbentuk tuple (Close, SCMA.JK), ambil level pertama saja
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
     if not df.empty and len(df) > 30:
-        # Kalkulasi Indikator
+        # Indikator Teknis
         df['EMA12'] = df['Close'].ewm(span=12).mean()
         df['EMA26'] = df['Close'].ewm(span=26).mean()
         df['MACD'] = df['EMA12'] - df['EMA26']
@@ -69,35 +68,32 @@ try:
         akurasi = r2_score(y[split:], y_pred)
         next_price = model.predict(X.tail(1))[0]
 
-        # --- LOGIKA ANALISA (PENGAMBILAN DATA SKALAR YANG AMAN) ---
+        # Logika Data Terakhir
         latest = df_ml.iloc[-1]
         prev = df_ml.iloc[-2]
 
-        # --- LOGIKA AKSI YANG LEBIH TAJAM ---
-if wyckoff == "Accumulation / Markup" and macd_status == "Bullish Crossover":
-    # Hanya beli jika Wyckoff mendukung kenaikan
-    aksi, warna = "STRONG BUY / ENTRY", "green"
-elif wyckoff == "Distribution" and macd_status == "Bullish Crossover":
-    # Jika Wyckoff distribusi tapi MACD naik, ini waspada bull trap
-    aksi, warna = "WAIT / CAUTION (BULL TRAP)", "orange"
-elif wyckoff == "Distribution" or macd_status == "Bearish Crossover":
-    # Jika salah satu sudah konfirmasi turun, langsung jual
-    aksi, warna = "SELL / TAKE PROFIT", "red"
-else:
-    aksi, warna = "WAIT / HOLD", "yellow"
+        # 1. Wyckoff Phase Logic
+        if latest['Close'] > latest['S_5'] and latest['Volume'] > latest['V_5']:
+            wyckoff = "Accumulation / Markup"
+        elif latest['Close'] < latest['S_5'] and latest['Volume'] > latest['V_5']:
+            wyckoff = "Distribution"
+        else:
+            wyckoff = "Neutral / Testing"
+
         # 2. MACD & Divergence
         macd_status = "Bullish Crossover" if latest['MACD'] > latest['Signal'] else "Bearish Crossover"
-        
         div_status = "No Divergence"
         if latest['Close'] > prev['Close'] and latest['RSI'] < prev['RSI']:
             div_status = "Bearish Divergence"
         elif latest['Close'] < prev['Close'] and latest['RSI'] > prev['RSI']:
             div_status = "Bullish Divergence"
 
-        # 3. Rekomendasi Aksi
-        if latest['RSI'] < 35 or (latest['MACD'] > latest['Signal'] and div_status == "Bullish Divergence"):
-            aksi, warna = "BUY / ACCUMULATE", "green"
-        elif latest['RSI'] > 65 or (latest['MACD'] < latest['Signal'] and div_status == "Bearish Divergence"):
+        # 3. Logika Aksi (Integrasi Wyckoff & MACD)
+        if wyckoff == "Accumulation / Markup" and macd_status == "Bullish Crossover":
+            aksi, warna = "STRONG BUY / ENTRY", "green"
+        elif wyckoff == "Distribution" and macd_status == "Bullish Crossover":
+            aksi, warna = "WAIT / CAUTION (BULL TRAP)", "orange"
+        elif wyckoff == "Distribution" or macd_status == "Bearish Crossover":
             aksi, warna = "SELL / TAKE PROFIT", "red"
         else:
             aksi, warna = "WAIT / HOLD", "yellow"
@@ -119,7 +115,7 @@ else:
         a4.info(f"**Divergence**\n\n{div_status}")
 
     else:
-        st.warning("Data tidak cukup. Gunakan ticker lain atau rentang waktu lebih lama.")
+        st.warning("Data tidak cukup untuk analisa.")
 
 except Exception as e:
     st.error(f"Error dalam analisa: {e}")
