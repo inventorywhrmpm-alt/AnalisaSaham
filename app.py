@@ -11,13 +11,13 @@ st.sidebar.header("Konfigurasi Saham")
 ticker_input = st.sidebar.text_input("Kode Saham (Contoh: SCMA, BBCA)", value="SCMA").upper()
 ticker_yf = f"{ticker_input}.JK"
 
-# --- 1. TRADINGVIEW WIDGET (PENGGANTI CANDLESTICK MANUAL) ---
+# --- 1. TRADINGVIEW WIDGET (VERSI LEBIH TINGGI) ---
 st.subheader(f"Live Chart TradingView: {ticker_input}")
 
-# Script Widget TradingView
+# Script Widget TradingView dengan pengaturan tinggi 700px
 tradingview_script = f"""
-<div class="tradingview-widget-container" style="height:500px;">
-  <div id="tradingview_chart"></div>
+<div class="tradingview-widget-container" style="height:700px; width:100%;">
+  <div id="tradingview_chart" style="height:100%; width:100%;"></div>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript">
   new TradingView.widget({{
@@ -37,8 +37,9 @@ tradingview_script = f"""
   </script>
 </div>
 """
-# Tampilkan Widget
-components.html(tradingview_script, height=500)
+
+# Tampilkan Widget dengan parameter height=700
+components.html(tradingview_script, height=720) # Beri sedikit margin tambahan
 
 # --- 2. ENGINE PREDIKSI AI ---
 try:
