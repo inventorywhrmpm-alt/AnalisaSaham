@@ -33,30 +33,28 @@ components.html(tradingview_script, height=620)
 
 # --- 2. ENGINE ANALISA & AI ---
 try:
-    # Menarik data lebih panjang agar indikator stabil
+    # 1. Ambil Data
     df = yf.download(ticker_yf, start="2023-01-01", auto_adjust=True)
     
+    # FIX MULTI-INDEX: Jika kolom berbentuk tuple (Close, SCMA.JK), ambil level pertama saja
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
     if not df.empty and len(df) > 30:
-        # Perhitungan Indikator (Gunakan .iloc agar label konsisten)
-        close_prices = df['Close']
+        # Kalkulasi Indikator
+        df['EMA12'] = df['Close'].ewm(span=12).mean()
+        df['EMA26'] = df['Close'].ewm(span=26).mean()
+        df['MACD'] = df['EMA12'] - df['EMA26']
+        df['Signal'] = df['MACD'].ewm(span=9).mean()
         
-        # RSI
-        delta = close_prices.diff()
+        delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         df['RSI'] = 100 - (100 / (1 + (gain / loss)))
 
-        # MACD
-        df['EMA12'] = close_prices.ewm(span=12, adjust=False).mean()
-        df['EMA26'] = close_prices.ewm(span=26, adjust=False).mean()
-        df['MACD'] = df['EMA12'] - df['EMA26']
-        df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-
-        # Fitur AI
-        df['S_5'] = close_prices.rolling(window=5).mean()
+        df['S_5'] = df['Close'].rolling(window=5).mean()
         df['V_5'] = df['Volume'].rolling(window=5).mean()
         
-        # Buat copy data bersih untuk ML
         df_ml = df.dropna().copy()
 
         # Training Model
@@ -71,43 +69,36 @@ try:
         akurasi = r2_score(y[split:], y_pred)
         next_price = model.predict(X.tail(1))[0]
 
-        # --- LOGIKA ANALISA (MENGGUNAKAN NILAI SKALAR AGAR TIDAK ERROR LABEL) ---
-        latest_close = float(df_ml['Close'].iloc[-1])
-        prev_close = float(df_ml['Close'].iloc[-2])
-        latest_rsi = float(df_ml['RSI'].iloc[-1])
-        prev_rsi = float(df_ml['RSI'].iloc[-2])
-        latest_vol = float(df_ml['Volume'].iloc[-1])
-        avg_vol = float(df_ml['V_5'].iloc[-1])
-        ma5 = float(df_ml['S_5'].iloc[-1])
+        # --- LOGIKA ANALISA (PENGAMBILAN DATA SKALAR YANG AMAN) ---
+        latest = df_ml.iloc[-1]
+        prev = df_ml.iloc[-2]
 
-        # 1. Status Wyckoff
-        if latest_close > ma5 and latest_vol > avg_vol:
+        # 1. Wyckoff
+        if latest['Close'] > latest['S_5'] and latest['Volume'] > latest['V_5']:
             wyckoff = "Accumulation / Markup"
-        elif latest_close < ma5 and latest_vol > avg_vol:
+        elif latest['Close'] < latest['S_5'] and latest['Volume'] > latest['V_5']:
             wyckoff = "Distribution"
         else:
             wyckoff = "Neutral / Testing"
 
         # 2. MACD & Divergence
-        macd_val = float(df_ml['MACD'].iloc[-1])
-        sig_val = float(df_ml['Signal'].iloc[-1])
-        macd_status = "Bullish Crossover" if macd_val > sig_val else "Bearish Crossover"
-
+        macd_status = "Bullish Crossover" if latest['MACD'] > latest['Signal'] else "Bearish Crossover"
+        
         div_status = "No Divergence"
-        if latest_close > prev_close and latest_rsi < prev_rsi:
+        if latest['Close'] > prev['Close'] and latest['RSI'] < prev['RSI']:
             div_status = "Bearish Divergence"
-        elif latest_close < prev_close and latest_rsi > prev_rsi:
+        elif latest['Close'] < prev['Close'] and latest['RSI'] > prev['RSI']:
             div_status = "Bullish Divergence"
 
         # 3. Rekomendasi Aksi
-        if latest_rsi < 35 or (macd_val > sig_val and div_status == "Bullish Divergence"):
+        if latest['RSI'] < 35 or (latest['MACD'] > latest['Signal'] and div_status == "Bullish Divergence"):
             aksi, warna = "BUY / ACCUMULATE", "green"
-        elif latest_rsi > 65 or (macd_val < sig_val and div_status == "Bearish Divergence"):
+        elif latest['RSI'] > 65 or (latest['MACD'] < latest['Signal'] and div_status == "Bearish Divergence"):
             aksi, warna = "SELL / TAKE PROFIT", "red"
         else:
             aksi, warna = "WAIT / HOLD", "yellow"
 
-        # --- TAMPILAN ---
+        # --- TAMPILAN DASHBOARD ---
         st.write("---")
         st.subheader("🤖 AI & Technical Analysis Summary")
         
@@ -120,11 +111,11 @@ try:
         a1, a2, a3, a4 = st.columns(4)
         a1.info(f"**Wyckoff Phase**\n\n{wyckoff}")
         a2.info(f"**MACD Status**\n\n{macd_status}")
-        a3.info(f"**RSI (14)**\n\n{latest_rsi:.2f}")
+        a3.info(f"**RSI (14)**\n\n{latest['RSI']:.2f}")
         a4.info(f"**Divergence**\n\n{div_status}")
 
     else:
-        st.warning("Data tidak cukup untuk melakukan analisa. Coba saham dengan histori lebih panjang.")
+        st.warning("Data tidak cukup. Gunakan ticker lain atau rentang waktu lebih lama.")
 
 except Exception as e:
     st.error(f"Error dalam analisa: {e}")
