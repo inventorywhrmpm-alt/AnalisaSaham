@@ -73,14 +73,18 @@ try:
         latest = df_ml.iloc[-1]
         prev = df_ml.iloc[-2]
 
-        # 1. Wyckoff
-        if latest['Close'] > latest['S_5'] and latest['Volume'] > latest['V_5']:
-            wyckoff = "Accumulation / Markup"
-        elif latest['Close'] < latest['S_5'] and latest['Volume'] > latest['V_5']:
-            wyckoff = "Distribution"
-        else:
-            wyckoff = "Neutral / Testing"
-
+        # --- LOGIKA AKSI YANG LEBIH TAJAM ---
+if wyckoff == "Accumulation / Markup" and macd_status == "Bullish Crossover":
+    # Hanya beli jika Wyckoff mendukung kenaikan
+    aksi, warna = "STRONG BUY / ENTRY", "green"
+elif wyckoff == "Distribution" and macd_status == "Bullish Crossover":
+    # Jika Wyckoff distribusi tapi MACD naik, ini waspada bull trap
+    aksi, warna = "WAIT / CAUTION (BULL TRAP)", "orange"
+elif wyckoff == "Distribution" or macd_status == "Bearish Crossover":
+    # Jika salah satu sudah konfirmasi turun, langsung jual
+    aksi, warna = "SELL / TAKE PROFIT", "red"
+else:
+    aksi, warna = "WAIT / HOLD", "yellow"
         # 2. MACD & Divergence
         macd_status = "Bullish Crossover" if latest['MACD'] > latest['Signal'] else "Bearish Crossover"
         
